@@ -1,4 +1,4 @@
-/**
+﻿/**
  * swagger-ui - Swagger UI is a dependency-free collection of HTML, JavaScript, and CSS assets that dynamically generate beautiful documentation from a Swagger-compliant API
  * @version v2.1.4
  * @link http://swagger.io
@@ -1659,7 +1659,6 @@ var SwaggerHttp = module.exports = function () {};
 
 SwaggerHttp.prototype.execute = function (obj, opts) {
   var client;
-
   if(opts && opts.client) {
     client = opts.client;
   }
@@ -1697,6 +1696,11 @@ SwaggerHttp.prototype.execute = function (obj, opts) {
       obj.body = JSON.stringify(obj.body);
     }
   }
+
+  if (opts.fileResponse) {
+    obj.xhrFields = {responseType: 'blob'};
+  }
+
   client.execute(obj);
 };
 
@@ -15319,15 +15323,19 @@ jQuery.ajaxTransport(function( options ) {
 									xhr.statusText
 								);
 							} else {
+								var text;
+								if (xhr.responseType === "blob") {
+									text = xhr.response;
+								} else {
+									text = xhr.responseText;
+								}
 								complete(
 									xhrSuccessStatus[ xhr.status ] || xhr.status,
 									xhr.statusText,
 									// Support: IE9
 									// Accessing binary-data responseText throws an exception
 									// (#11426)
-									typeof xhr.responseText === "string" ? {
-										text: xhr.responseText
-									} : undefined,
+									{text: text},
 									xhr.getAllResponseHeaders()
 								);
 							}
@@ -31603,6 +31611,7 @@ SwaggerUi.Views.OperationView = Backbone.View.extend({
       }
       opts.responseContentType = $('div select[name=responseContentType]', $(this.el)).val();
       opts.requestContentType = $('div select[name=parameterContentType]', $(this.el)).val();
+      opts.fileResponse = this.model.successResponse && this.model.successResponse[200] && this.model.successResponse[200].type === 'file';
       $('.response_throbber', $(this.el)).show();
       if (isFileUpload) {
         $('.request_url', $(this.el)).html('<pre></pre>');
@@ -31890,7 +31899,7 @@ SwaggerUi.Views.OperationView = Backbone.View.extend({
 
       if ('Blob' in window) {
         var type = contentType || 'text/html';
-        var blob = new Blob([content], {type: type});
+        var blob = new Blob([response.data], {type: type});
         var a = document.createElement('a');
         var href = window.URL.createObjectURL(blob);
         var fileName = response.url.substr(response.url.lastIndexOf('/') + 1);
@@ -32289,3 +32298,4 @@ SwaggerUi.Views.StatusCodeView = Backbone.View.extend({
     return this;
   }
 });}).call(this);
+
