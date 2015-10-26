@@ -31885,7 +31885,17 @@ SwaggerUi.Views.OperationView = Backbone.View.extend({
 
     // Image
     } else if (/^image\//.test(contentType)) {
-      pre = $('<img>').attr('src', url);
+      if (response.method === 'GET') {
+        pre = $('<img>').attr('src', url);
+      } else {
+        if ('Blob' in window) {
+          var blob = new Blob([response.data], {type: contentType});
+          var href = window.URL.createObjectURL(blob);
+          pre = $('<img>').attr('src', href);
+        } else {
+          pre = $('<pre class="json" />').append('Download headers detected but your browser does not support downloading binary via XHR (Blob).');
+        }
+      }
 
     // Audio
     } else if (/^audio\//.test(contentType) && supportsAudioPlayback(contentType)) {
