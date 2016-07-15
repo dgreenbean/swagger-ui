@@ -331,7 +331,7 @@ SwaggerUi.Views.OperationView = Backbone.View.extend({
       opts.requestContentType = $('div select[name=parameterContentType]', $(this.el)).val();
       $('.response_throbber', $(this.el)).show();
       if (isFileUpload) {
-        return this.handleFileUpload(map, form);
+        return this.handleFileUpload(map, form, opts);
       } else {
         return this.model.execute(map, opts, this.showCompleteStatus, this.showErrorStatus, this);
       }
@@ -344,7 +344,7 @@ SwaggerUi.Views.OperationView = Backbone.View.extend({
 
   // Note: This is compiled code
   // TODO: Refactor
-  handleFileUpload: function(map, form) {
+  handleFileUpload: function(map, form, opts) {
     var bodyParam, el, headerParams, l, len, len1, len2, len3, m, n, o, p, param, params, ref1, ref2, ref3, ref4;
     ref1 = form.serializeArray();
     for (l = 0, len = ref1.length; l < len; l++) {
@@ -380,17 +380,37 @@ SwaggerUi.Views.OperationView = Backbone.View.extend({
         params += 1;
       }
     }
-    this.invocationUrl = this.model.supportHeaderParams() ? (headerParams = this.model.getHeaderParams(map), delete headerParams['Content-Type'], this.model.urlify(map, false)) : this.model.urlify(map, true);
+    if (this.model.supportHeaderParams()) {
+      var allHeaders = this.model.getHeaderParams(map);
+      var contentTypeHeaders = this.model.setContentTypes(map, opts);
+      var attrname;
+      for (attrname in allHeaders) { headerParams[attrname] = allHeaders[attrname]; }
+      for (attrname in contentTypeHeaders) { headerParams[attrname] = contentTypeHeaders[attrname]; }
+      delete headerParams['Content-Type'];
+      this.invocationUrl = this.model.urlify(map, false);
+    } else {
+      this.invocationUrl = this.model.urlify(map, true);
+    }
     $('.request_url', $(this.el)).html('<pre></pre>');
     $('.request_url pre', $(this.el)).text(this.invocationUrl);
 
+    var dataType = 'json';
+    // Support for image and PDF repsonses from POST requests
+    if (this.model.method.toLowerCase() !== 'get' && headerParams.Accept) {
+      var accept = headerParams.Accept.toLowerCase();
+      if (/^image\//.test(accept) || /application\/pdf/.test(accept)) {
+        dataType = 'binary';
+      }
+    }
+
+    var binaryData;
     // TODO: don't use jQuery. Use SwaggerJS for handling the call.
     var obj = {
       type: this.model.method,
       url: this.invocationUrl,
       headers: headerParams,
       data: bodyParam,
-      dataType: 'json',
+      dataType: dataType,
       contentType: false,
       processData: false,
       error: (function(_this) {
@@ -400,22 +420,68 @@ SwaggerUi.Views.OperationView = Backbone.View.extend({
       })(this),
       success: (function(_this) {
         return function(data) {
+          binaryData = data;
           return _this.showResponse(data, _this);
         };
       })(this),
       complete: (function(_this) {
         return function(data) {
-          return _this.showCompleteStatus(_this.wrap(data), _this);
+          return _this.showCompleteStatus(_this.wrap(data, dataType === 'binary' ? binaryData : undefined), _this);
         };
       })(this)
     };
+
+    // Taken from https://github.com/henrya/js-jquery/blob/master/BinaryTransport/jquery.binarytransport.js
+    // jquery.binarytransport.js
+    // @description. jQuery ajax transport for making binary data type requests.
+    // @version 1.0
+    // @author Henry Algus <henryalgus@gmail.com>
+    // use this transport for "binary" data type
+    jQuery.ajaxTransport('+binary', function(options) {
+      // check for conditions and support for blob / arraybuffer response type
+      if (window.FormData && ((options.dataType && (options.dataType === 'binary')) || (options.data && ((window.ArrayBuffer && options.data instanceof ArrayBuffer) || (window.Blob && options.data instanceof Blob))))) {
+        return {
+          // create new XMLHttpRequest
+          send: function(headers, callback) {
+            // setup all variables
+	    var xhr = new XMLHttpRequest(),
+	      url = options.url,
+	      type = options.type,
+	      async = options.async || true,
+	      // blob or arraybuffer. Default is blob
+	      dataType = options.responseType || 'blob',
+	      data = options.data || null,
+	      username = options.username || null,
+	      password = options.password || null;
+            xhr.addEventListener('load', function() {
+              var data = {};
+	      data[options.dataType] = xhr.response;
+	      // make callback and send data
+	      callback(xhr.status, xhr.statusText, data, xhr.getAllResponseHeaders());
+	    });
+
+	    xhr.open(type, url, async, username, password);
+
+	    // setup custom headers
+	    for (var i in headers) {
+              xhr.setRequestHeader(i, headers[i]);
+	    }
+
+	    xhr.responseType = dataType;
+	    xhr.send(data);
+	  },
+          abort: function() {}
+        };
+      }
+    });
+
     jQuery.ajax(obj);
     return false;
     // end of file-upload nastiness
   },
   // wraps a jquery response as a shred response
 
-  wrap: function(data) {
+  wrap: function(data, binaryData) {
    var h, headerArray, headers, i, l, len, o;
     headers = {};
     headerArray = data.getAllResponseHeaders().split('\r');
@@ -432,7 +498,7 @@ SwaggerUi.Views.OperationView = Backbone.View.extend({
     }
     o = {};
     o.content = {};
-    o.content.data = data.responseText;
+    o.content.data = binaryData ? binaryData : data.responseText;
     o.headers = headers;
     o.request = {};
     o.request.url = this.invocationUrl;
@@ -569,7 +635,9 @@ SwaggerUi.Views.OperationView = Backbone.View.extend({
       url = response.request.url;
     }
     var headers = response.headers;
-    content = jQuery.trim(content);
+    if (typeof content === 'string') {
+      content = jQuery.trim(content);
+    }
 
     // if server is nice, and sends content-type back, we can use it
     var contentType = null;
@@ -589,6 +657,8 @@ SwaggerUi.Views.OperationView = Backbone.View.extend({
 
     var pre;
     var code;
+    var blob;
+    var href;
     if (!content) {
       code = $('<code />').text('no content');
       pre = $('<pre class="json" />').append(code);
@@ -619,10 +689,33 @@ SwaggerUi.Views.OperationView = Backbone.View.extend({
       code = $('<code />').text(content);
       pre = $('<pre class="plain" />').append(code);
 
-
-    // Image
+      // Image
     } else if (/^image\//.test(contentType)) {
-      pre = $('<img>').attr('src', url);
+      if (response.method === 'GET') {
+        pre = $('<img>').attr('src', url);
+      } else {
+        if ('Blob' in window) {
+          blob = new Blob([content], {type: contentType});
+          href = window.URL.createObjectURL(blob);
+          pre = $('<img>').attr('src', href);
+        } else {
+          pre = $('<pre class="json" />').append('Download headers detected but your browser does not support downloading binary via XHR (Blob).');
+        }
+      }
+
+      // PDF
+    } else if (/application\/pdf/.test(contentType)) {
+      if (response.method === 'GET') {
+        pre = $('<iframe/>').attr('src', url).attr('width', '100%').attr('height', '500');
+      } else {
+        if ('Blob' in window) {
+          blob = new Blob([content], {type: contentType});
+          href = window.URL.createObjectURL(blob);
+          pre = $('<iframe/>').attr('src', href).attr('width', '100%').attr('height', '500');
+        } else {
+          pre = $('<pre class="json" />').append('Download headers detected but your browser does not support downloading binary via XHR (Blob).');
+        }
+      }
 
     // Audio
     } else if (/^audio\//.test(contentType) && supportsAudioPlayback(contentType)) {
@@ -636,9 +729,9 @@ SwaggerUi.Views.OperationView = Backbone.View.extend({
 
       if ('Blob' in window) {
         var type = contentType || 'text/html';
-        var blob = new Blob([content], {type: type});
+        blob = new Blob([content], {type: type});
         var a = document.createElement('a');
-        var href = window.URL.createObjectURL(blob);
+        href = window.URL.createObjectURL(blob);
         var fileName = response.url.substr(response.url.lastIndexOf('/') + 1);
         var download = [type, fileName, href].join(':');
 
