@@ -1646,17 +1646,18 @@ SwaggerHttp.prototype.execute = function (obj, opts) {
     client = new SuperagentHttpClient(opts);
   }
 
-  // legacy support
-  if ((obj && obj.useJQuery === true) || this.isInternetExplorer()) {
-    client = new JQueryHttpClient(opts);
-  }
-
   // Support for image and PDF repsonses from POST requests
   if (obj.method.toLowerCase() !== 'get' && obj.headers['Accept']) {
     var accept = obj.headers['Accept'].toLowerCase();
     if (/^image\//.test(accept) || /application\/pdf/.test(accept)) {
       obj.dataType = 'binary';
+      obj.useJQuery = true;
     }
+  }
+
+  // legacy support
+  if ((obj && obj.useJQuery === true) || this.isInternetExplorer()) {
+    client = new JQueryHttpClient(opts);
   }
 
   var success = obj.on.response;
@@ -1743,7 +1744,7 @@ JQueryHttpClient.prototype.execute = function (obj) {
   // @version 1.0
   // @author Henry Algus <henryalgus@gmail.com>
   // use this transport for "binary" data type
-  jq.ajaxTransport("+binary", function(options, originalOptions, jqXHR) {
+  jQuery.ajaxTransport("+binary", function(options, originalOptions, jqXHR) {
     // check for conditions and support for blob / arraybuffer response type
     if (window.FormData && ((options.dataType && (options.dataType == 'binary')) || (options.data && ((window.ArrayBuffer && options.data instanceof ArrayBuffer) || (window.Blob && options.data instanceof Blob))))) {
       return {
